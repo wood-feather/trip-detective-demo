@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行程大侦探 · 在线 Demo</title>
+<link rel="stylesheet" href="css/ink.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="masthead">
+    <a class="mark" href="./" aria-label="回到开场">侦</a>
+    <div class="masthead-title">
+      <h1>行程大侦探</h1>
+      <p>不做顺从的行程生成器——我负责找出你没意识到的矛盾</p>
+    </div>
+    <nav class="actions" aria-label="操作">
+      <button id="newCase" class="line-btn" type="button">新建案件</button>
+      <i aria-hidden="true"></i>
+      <button id="retry" class="line-btn quiet" type="button" disabled>重新侦查</button>
+      <i aria-hidden="true"></i>
+      <button id="toggleConfig" class="line-btn quiet" type="button">收起配置</button>
+    </nav>
+  </header>
+
+  <div id="verdictBar">
+    <span id="badge" class="badge clear"></span>
+    <span class="vtxt" id="verdictText"></span>
+    <span id="confBadge" class="conf-badge" hidden></span>
+  </div>
+
+  <section id="cluePanel" class="clue-panel" hidden aria-label="线索清单">
+    <div class="clue-head">
+      <span class="eyebrow">线索清单</span>
+      <span id="clueMeterText" class="clue-meter-text"></span>
+    </div>
+    <div class="meter"><span id="clueMeterFill" class="meter-fill"></span></div>
+    <div id="clueChips" class="clue-chips"></div>
+  </section>
+
+  <section id="configPanel" class="keybar" aria-label="接口配置">
+    <div class="keygrid">
+      <div>
+        <label class="field-label" for="apiUrl">API 地址</label>
+        <input id="apiUrl" value="https://api.deepseek.com/chat/completions" placeholder="https://.../chat/completions">
+      </div>
+      <div>
+        <label class="field-label" for="model">模型名</label>
+        <input id="model" value="deepseek-chat" placeholder="deepseek-chat">
+      </div>
+      <div>
+        <label class="field-label" for="key">API Key</label>
+        <input id="key" type="password" placeholder="sk-...">
+      </div>
+    </div>
+    <p class="note">本页面为纯前端 Demo,请求由浏览器直接发往你填写的接口。Key 只存在你这台设备的浏览器里(localStorage),不会被本站收集或上传。</p>
+  </section>
+
+  <main id="chat"></main>
+
+  <div id="loading">侦探正在排查矛盾</div>
+
+  <footer id="bar">
+    <input id="input" placeholder="例如:我下周末带爸妈去杭州,2天1晚,预算1500,爸爸爱喝茶,妈妈爱拍照">
+    <button id="send" class="seal-btn" type="button">发送</button>
+  </footer>
+
+</div>
+
+<script src="js/prompt.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
