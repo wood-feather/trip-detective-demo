@@ -210,7 +210,7 @@ body {
   min-height: 0;
   overflow: hidden;
 }
-/* 诗意背景:远山、薄雾、淡月、竖排诗句,全部 CSS 绘制 */
+/* 水墨背景:画面中央一枚淡墨圆相,圈内远山与竖排诗句,全部 CSS 绘制 */
 .chat-bg {
   position: absolute;
   inset: 0;
@@ -225,73 +225,81 @@ body {
   overflow-y: auto;
   padding: 14px 22px;
 }
-/* 一弯淡月 */
-.moon {
-  position: absolute;
-  top: 34px;
-  right: 52px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 36%, rgba(255, 253, 246, .95), rgba(244, 238, 222, .55) 62%, rgba(244, 238, 222, 0) 74%);
-  box-shadow: 0 0 34px 10px rgba(255, 252, 240, .5);
-  opacity: .8;
-}
 /* 两层薄雾,缓缓横移 */
 .mist {
   position: absolute;
   left: -30%;
   width: 160%;
   height: 74px;
-  background: linear-gradient(90deg, rgba(255, 253, 246, 0), rgba(255, 253, 246, .55) 30%, rgba(255, 253, 246, .28) 60%, rgba(255, 253, 246, 0));
+  background: linear-gradient(90deg, rgba(255, 253, 246, 0), rgba(255, 253, 246, .5) 30%, rgba(255, 253, 246, .26) 60%, rgba(255, 253, 246, 0));
   filter: blur(6px);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 32%, #000 68%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 32%, #000 68%, transparent);
 }
-.mist.m1 { top: 30%; animation: drift 46s linear infinite; }
-.mist.m2 { top: 58%; height: 56px; opacity: .7; animation: drift 64s linear infinite reverse; }
+.mist.m1 { top: 26%; animation: drift 46s linear infinite; }
+.mist.m2 { top: 62%; height: 56px; opacity: .7; animation: drift 64s linear infinite reverse; }
 @keyframes drift {
   from { transform: translateX(-12%); }
   to   { transform: translateX(12%); }
 }
-/* 远山淡影:两层墨色剪影 */
-.hills {
+/* 中央圆相:淡墨晕开的圆,圈内藏山与诗 */
+.ink-center {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -6px;
-  height: 152px;
-  background:
-    radial-gradient(58% 92% at 18% 100%, rgba(35, 33, 32, .18), rgba(35, 33, 32, 0) 70%),
-    radial-gradient(46% 78% at 52% 100%, rgba(35, 33, 32, .12), rgba(35, 33, 32, 0) 72%),
-    radial-gradient(64% 88% at 84% 100%, rgba(35, 33, 32, .16), rgba(35, 33, 32, 0) 70%);
+  left: 50%;
+  top: 50%;
+  width: min(46vh, 400px);
+  height: min(46vh, 400px);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 46%,
+    rgba(35, 33, 32, .075) 0%,
+    rgba(35, 33, 32, .055) 52%,
+    rgba(35, 33, 32, .028) 74%,
+    rgba(35, 33, 32, 0) 86%);
+  box-shadow: 0 0 60px 24px rgba(35, 33, 32, .035);
 }
-/* 诗句横题于山影之上,配一枚朱砂小印 */
+/* 圈内远山:三座圆头峰影,高低错落,底边沉到圈外由圆裁掉 */
+.ink-hills {
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  bottom: -14%;
+  height: 62%;
+  background:
+    radial-gradient(26% 52% at 48% 100%, rgba(35, 33, 32, .13), rgba(35, 33, 32, 0) 78%),
+    radial-gradient(30% 74% at 20% 100%, rgba(35, 33, 32, .21), rgba(35, 33, 32, 0) 80%),
+    radial-gradient(34% 88% at 78% 100%, rgba(35, 33, 32, .17), rgba(35, 33, 32, 0) 80%);
+}
+/* 圈内竖排诗句 + 朱砂落印 */
 .poem {
   position: absolute;
-  right: 30px;
-  bottom: 22px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  left: 50%;
+  top: 15%;
+  transform: translateX(-50%);
+  writing-mode: vertical-rl;
   font-family: var(--kai);
-  font-size: 13.5px;
-  letter-spacing: .34em;
-  color: rgba(35, 33, 32, .34);
+  font-size: clamp(15px, 2.4vh, 19px);
+  letter-spacing: .5em;
+  line-height: 2.4;
+  color: rgba(35, 33, 32, .38);
+  text-shadow: 0 0 14px rgba(244, 240, 230, .9);
   user-select: none;
-  white-space: nowrap;
 }
 .poem i {
-  flex: none;
-  width: 14px;
-  height: 14px;
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  margin-top: 12px;
   background: var(--vermilion-soft);
   border-radius: 2px;
-  opacity: .6;
+  opacity: .62;
   transform: rotate(-2deg);
 }
-/* 窄屏收敛背景,避免与气泡争地 */
+/* 窄屏收敛,避免与气泡争地 */
 @media (max-width: 640px) {
-  .poem { right: 16px; bottom: 14px; font-size: 12px; letter-spacing: .2em; }
-  .moon { right: 26px; }
+  .ink-center { width: min(40vh, 300px); height: min(40vh, 300px); }
+  .poem { font-size: 14px; letter-spacing: .34em; }
 }
 
 .msg { margin: 13px 0; display: flex; }
