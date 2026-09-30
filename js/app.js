@@ -19,10 +19,13 @@ const toggleCfgBtn= document.getElementById("toggleConfig");
 const configPanel = document.getElementById("configPanel");
 const verdictBar  = document.getElementById("verdictBar");
 const cluePanel   = document.getElementById("cluePanel");
+const stopBtn     = document.getElementById("stop");
 
 let messages = [];       // 完整对话历史(含 system / user / assistant)
 let lastUserTurn = null; // 上一次"待回答"的消息快照,供"重新侦查"使用
 let lastPlan = null;     // 最近一次解析出的行程 JSON,供导出使用
+let abortCtrl = null;    // 当前请求的中止控制器
+const REQUEST_TIMEOUT = 120000; // 120 秒超时
 
 // ---------------- 记忆配置(仅保存在本浏览器) ----------------
 const savedKey   = localStorage.getItem("ds_key");
@@ -433,6 +436,13 @@ function renderPlan(plan){
 
   const b = addBubble("bot", h + daysHtml);
   attachExport(b, plan);
+
+  // 有确定目的地时,附一张未来一周天气参考卡
+  if (plan.verdict !== "impossible"){
+    fetchWeather(plan).then(function(w){
+      if (w) renderWeatherCard(w);
+    }).catch(function(){ /* 天气失败不影响主流程 */ });
+  }
 }
 
 function renderReply(raw){
@@ -462,6 +472,8 @@ function setLoading(on){
   const el = document.getElementById("loading");
   el.style.display = on ? "block" : "none";
   sendBtn.disabled = on;
+  sendBtn.hidden = on;
+  stopBtn.hidden = !on;
   retryBtn.disabled = on || !lastUserTurn;
   if (on){
     let i = 0; el.textContent = LOADING_STEPS[0];
@@ -474,8 +486,8 @@ function setLoading(on){
   }
 }
 
-// ---------------- 请求 ----------------
-// 浏览器直连 OpenAI 兼容接口;错误映射为友好中文,不暴露服务商细节。
+// ---------------- 请求(流式) ----------------
+// 浏览器直连 OpenAI 兼容接口,SSE 逐字回显;错误映射为友好中文。
 function friendlyHttpError(status, bodyText){
   if (status === 401) return "API Key 无效或已过期,请检查后重试";
   if (status === 402) return "账户余额不足,请先充值";
@@ -488,6 +500,65 @@ function friendlyHttpError(status, bodyText){
   return "接口返回错误(HTTP " + status + ")" + (detail ? ":" + detail : "");
 }
 
+// 解析一段 SSE 文本,取出所有 data: 行里的增量内容
+function sseDelta(chunkText){
+  let out = "";
+  chunkText.split("\n").forEach(function(line){
+    line = line.trim();
+    if (!line.startsWith("data:")) return;
+    const payload = line.slice(5).trim();
+    if (payload === "[DONE]") return;
+    try {
+      const obj = JSON.parse(payload);
+      const d = obj.choices && obj.choices[0] && obj.choices[0].delta;
+      if (d && typeof d.content === "string") out += d.content;
+    } catch(e){ /* 半截 JSON,等下一个 chunk */ }
+  });
+  return out;
+}
+
+async function streamChat(apiUrl, key, model, payloadMessages, onDelta, signal){
+  const res = await fetch(apiUrl, {
+    method: "POST",
+    signal: signal,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + key
+    },
+    body: JSON.stringify({ model: model, messages: payloadMessages,
+                           temperature: 0.7, stream: true })
+  });
+  if (!res.ok){
+    const bodyText = await res.text().catch(function(){ return ""; });
+    throw new Error(friendlyHttpError(res.status, bodyText));
+  }
+  // 不支持流式时(无 body 或非 SSE)退化为一次性 JSON
+  const ctype = res.headers.get("Content-Type") || "";
+  if (!res.body || ctype.indexOf("event-stream") < 0){
+    const data = await res.json();
+    const reply = data && data.choices && data.choices[0] &&
+                  data.choices[0].message && data.choices[0].message.content;
+    if (!reply) throw new Error("接口未返回有效内容,请检查模型名是否正确");
+    onDelta(reply);
+    return reply;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buf = "", full = "";
+  for(;;){
+    const r = await reader.read();
+    if (r.done) break;
+    buf += decoder.decode(r.value, { stream: true });
+    // 按 SSE 事件边界(\n\n)切,最后一段留到下次
+    const parts = buf.split("\n\n");
+    buf = parts.pop();
+    const delta = sseDelta(parts.join("\n\n"));
+    if (delta){ full += delta; onDelta(delta); }
+  }
+  if (!full) throw new Error("接口未返回有效内容,请检查模型名是否正确");
+  return full;
+}
+
 async function callApi(payloadMessages){
   const key    = keyEl.value.trim();
   const model  = modelEl.value.trim() || DEFAULT_MODEL;
@@ -495,43 +566,98 @@ async function callApi(payloadMessages){
   if (!key){ alert("请先在配置里填写你的 API Key"); return; }
 
   setLoading(true);
+  // 打字机气泡:流式期间只显示纯文本,结束后再结构化渲染
+  const live = addBubble("bot", '<span class="stream-text"></span>');
+  const liveEl = live.querySelector(".stream-text");
+  abortCtrl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(function(){ timedOut = true; abortCtrl.abort("timeout"); }, REQUEST_TIMEOUT);
+  let raw = "";
   try{
-    const res = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + key
-      },
-      body: JSON.stringify({ model: model, messages: payloadMessages, temperature: 0.7 })
-    });
+    raw = await streamChat(apiUrl, key, model, payloadMessages,
+      function(delta){
+        liveEl.textContent += delta;
+        chatEl.scrollTop = chatEl.scrollHeight;
+      }, abortCtrl.signal);
 
-    if (!res.ok){
-      const bodyText = await res.text().catch(function(){ return ""; });
-      throw new Error(friendlyHttpError(res.status, bodyText));
-    }
-
-    const data = await res.json();
-    const reply = data && data.choices && data.choices[0] &&
-                  data.choices[0].message && data.choices[0].message.content;
-    if (!reply) throw new Error("接口未返回有效内容,请检查模型名是否正确");
-
+    live.parentNode.remove();          // 移除打字机气泡,换成结构化渲染
     messages = payloadMessages.slice();
-    messages.push({ role: "assistant", content: reply });
+    messages.push({ role: "assistant", content: raw });
     lastUserTurn = payloadMessages.slice();   // 供"重新侦查"
-    renderReply(reply);
+    renderReply(raw);
   }catch(err){
-    let msg = err && err.message ? err.message : String(err);
-    if (err instanceof TypeError){
-      // fetch 网络层失败:多为跨域被拦或地址不可达
-      msg = "无法连接该接口(跨域被拦截或地址不可达),请检查地址是否正确、是否允许浏览器直连";
+    live.parentNode.remove();
+    let msg;
+    if (timedOut){
+      msg = "请求超时(120 秒),已停止侦查,请重试";
+    }else if (err && err.name === "AbortError"){
+      msg = "已停止侦查";
+    }else{
+      msg = err && err.message ? err.message : String(err);
+      if (err instanceof TypeError){
+        // fetch 网络层失败:多为跨域被拦或地址不可达
+        msg = "无法连接该接口(跨域被拦截或地址不可达),请检查地址是否正确、是否允许浏览器直连";
+      }
     }
-    addBubble("bot", "出错了:" + escapeHtml(msg));
+    if (raw){
+      // 已经流出来一部分:保留半截内容,标注中断
+      addBubble("bot", '<div class="narrator">' + escapeHtml(raw) +
+        "\n\n———" + escapeHtml(msg) + "———</div>");
+    }else{
+      addBubble("bot", "出错了:" + escapeHtml(msg));
+    }
   }finally{
+    clearTimeout(timer);
+    abortCtrl = null;
     setLoading(false);
     retryBtn.disabled = !lastUserTurn;
     inputEl.focus();
   }
 }
+
+// ---------------- 天气参考(open-meteo,免 Key、支持 CORS) ----------------
+async function fetchWeather(plan){
+  const clues = Array.isArray(plan.clues) ? plan.clues : [];
+  const dest = clues.find(function(c){ return c.key === "目的地" && c.status === "known" && c.value; });
+  if (!dest) return null;
+  // 从"杭州""杭州、苏州"等文本里取第一个城市名(两到六个汉字)
+  const m = String(dest.value).match(/[\u4e00-\u9fa5A-Za-z]{2,8}/);
+  if (!m) return null;
+
+  const geoUrl = "https://geocoding-api.open-meteo.com/v1/search?name=" +
+                 encodeURIComponent(m[0]) + "&count=1&language=zh&format=json";
+  const geo = await (await fetch(geoUrl)).json();
+  if (!geo.results || !geo.results.length) return null;
+  const g = geo.results[0];
+
+  const fc = new Date();
+  const start = fc.toISOString().slice(0, 10);
+  fc.setDate(fc.getDate() + 6);
+  const end = fc.toISOString().slice(0, 10);
+  const fcUrl = "https://api.open-meteo.com/v1/forecast?latitude=" + g.latitude +
+    "&longitude=" + g.longitude +
+    "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FShanghai&start_date=" + start + "&end_date=" + end;
+  const data = await (await fetch(fcUrl)).json();
+  if (!data.daily || !data.daily.time) return null;
+  return { city: g.name + (g.admin1 ? " · " + g.admin1 : ""), daily: data.daily };
+}
+
+const WEEKDAY = ["日","一","二","三","四","五","六"];
+function renderWeatherCard(w){
+  let h = '<div class="weather"><h4>天气参考 · ' + escapeHtml(w.city) + '</h4>';
+  h += '<table class="weather-rows"><tr><th>日期</th><th>最低/最高</th><th>降雨概率</th></tr>';
+  w.daily.time.slice(0, 7).forEach(function(d, i){
+    const dt = new Date(d + "T00:00:00");
+    const tmax = w.daily.temperature_2m_max[i], tmin = w.daily.temperature_2m_min[i];
+    const rain = w.daily.precipitation_probability_max[i];
+    h += '<tr><td>' + (dt.getMonth()+1) + '/' + dt.getDate() + ' 周' + WEEKDAY[dt.getDay()] + '</td>' +
+         '<td>' + tmin + '° ~ ' + tmax + '°</td>' +
+         '<td>' + (rain == null ? "—" : rain + "%") + '</td></tr>';
+  });
+  h += '</table><p class="note">数据来源 open-meteo,为未来一周参考;出发前请再核对临近预报。</p></div>';
+  addBubble("bot", h);
+}
+
 
 async function doSend(){
   const text = inputEl.value.trim();
@@ -569,6 +695,9 @@ function newCase(){
 
 // ---------------- 事件绑定 ----------------
 sendBtn.addEventListener("click", function(){ doSend(); });
+stopBtn.addEventListener("click", function(){
+  if (abortCtrl){ abortCtrl.abort("stop"); toast("正在停止…"); }
+});
 retryBtn.addEventListener("click", function(){ doRetry(); });
 newCaseBtn.addEventListener("click", function(){ newCase(); });
 toggleCfgBtn.addEventListener("click", function(){
@@ -582,9 +711,29 @@ inputEl.addEventListener("keydown", function(e){
 });
 
 // ---------------- 开场 ----------------
+const EXAMPLES = [
+  "下周末带爸妈去杭州,2天1晚,预算1500,爸爸爱喝茶,妈妈爱拍照",
+  "五一想去西安玩3天,预算1000,一个人,喜欢历史,还想吃遍网红店",
+  "这周六日自驾去周边,两天,预算800,想带狗,不想爬山",
+];
+
 function greeting(){
-  addBubble("bot", "你好,我是行程大侦探。先说明:我不负责把你想去的地方都塞进去——" +
-    "我负责把它们的矛盾找出来。\n说说你的旅行想法吧,比如:" +
-    "「这周末想去西安玩2天,预算1000,一个人,喜欢历史,还想吃遍网红店」。");
+  const b = addBubble("bot", "你好,我是行程大侦探。先说明:我不负责把你想去的地方都塞进去——" +
+    "我负责把它们的矛盾找出来。\n点一个示例直接开案,或自己描述旅行想法:");
+  const box = document.createElement("div");
+  box.className = "examples";
+  EXAMPLES.forEach(function(t){
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chip sample";
+    btn.textContent = t;
+    btn.addEventListener("click", function(){
+      if (sendBtn.disabled) return;
+      inputEl.value = t;
+      doSend();
+    });
+    box.appendChild(btn);
+  });
+  b.appendChild(box);
 }
 greeting();

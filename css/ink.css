@@ -589,6 +589,25 @@ body {
 }
 .chip.unknown .v { color: var(--vermilion-soft); font-family: var(--kai); }
 
+/* 开场示例:可点击的墨线 chip */
+.examples { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.chip.sample {
+  appearance: none;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink-mid);
+  transition: color .3s ease, border-color .3s ease, background .3s ease;
+}
+.chip.sample:hover {
+  color: var(--vermilion);
+  border-bottom-color: var(--vermilion-soft);
+  background: rgba(166, 60, 48, .05);
+}
+
 /* 冲突计数小印 */
 .conf-badge {
   margin-left: auto;
@@ -817,4 +836,47 @@ body {
   z-index: 50;
 }
 .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 停止按钮:朱砂细线次行动 */
+.line-btn.danger {
+  color: var(--vermilion);
+  border-bottom-color: rgba(166, 60, 48, .35);
+  align-self: center;
+  white-space: nowrap;
+}
+.line-btn.danger:hover { color: #7d2a21; border-bottom-color: var(--vermilion); }
+
+/* 天气参考卡 */
+.weather {
+  margin-top: 10px;
+  background: rgba(236, 230, 216, .5);
+  padding: 11px 15px 12px;
+  border-top: 1px solid rgba(35, 33, 32, .35);
+}
+.weather h4 {
+  font-family: var(--kai);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: .16em;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.weather-rows { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.weather-rows th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--ink-soft);
+  letter-spacing: .12em;
+  padding: 3px 8px 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11.5px;
+}
+.weather-rows td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--hairline-2);
+  color: var(--ink-mid);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.weather .note { margin-top: 7px; }
 
